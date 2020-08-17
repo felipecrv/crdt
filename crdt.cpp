@@ -159,6 +159,40 @@ class GCounter {
   Payload _payload;
 };
 
+class PNCounter {
+ public:
+  using ValueType = int;
+
+  // PNCounter definition {{{
+  explicit PNCounter(std::string name) : _name(std::move(name)) {}
+
+  int query() const { return (int)_positive_payload.query() - (int)_negative_payload.query(); }
+
+  void increment(int delta) {
+    if (delta >= 0) {
+      printf("Incrementing by %u at replica '%s'.\n", delta, _name.c_str());
+      _positive_payload.increment(_name, (unsigned int)delta);
+    } else {
+      printf("Decrementing by %u at replica '%s'.\n", -delta, _name.c_str());
+      _negative_payload.increment(_name, (unsigned int)-delta);
+    }
+  }
+
+  void merge(const PNCounter &other) {
+    _positive_payload.merge(other._positive_payload);
+    _negative_payload.merge(other._negative_payload);
+  }
+  // }}}
+
+  const std::string &name() const { return _name; }
+  void dump() { printf("PNCounter('%s', %d)\n", _name.c_str(), query()); }
+
+ private:
+  const std::string _name;
+  GCounter::Payload _positive_payload;
+  GCounter::Payload _negative_payload;
+};
+
 template <typename CRDT>
 class P2PNetwork {
  public:
@@ -211,7 +245,7 @@ class P2PNetwork {
   }
 
   int countPartitions() const {
-    std::unordered_set<unsigned int> distinct_values;
+    std::unordered_set<typename CRDT::ValueType> distinct_values;
     for (auto *replica : _replicas) {
       if (replica) {
         const auto value = replica->query();
@@ -377,7 +411,7 @@ class StarNetwork {
   std::unordered_set<std::pair<size_t, CRDT *>> _offline_set;
 };
 
-void simulteGCountersInP2PNetwork() {
+void simulateGCountersInP2PNetwork() {
   P2PNetwork<GCounter> network;
 
   GCounter a_counter("A");
@@ -431,7 +465,7 @@ void simulteGCountersInP2PNetwork() {
   assert(network.countPartitions() == 1);
 }
 
-void simulteGCountersInStarNetwork() {
+void simulateGCountersInStarNetwork() {
   StarNetwork<GCounter> network;
 
   GCounter server_counter("SERVER");
@@ -503,8 +537,70 @@ void simulteGCountersInStarNetwork() {
   assert(a_counter.query() == 19);  // nothing changes after convergence without increments
 }
 
+void simulatePNCountersInP2PNetwork() {
+  P2PNetwork<PNCounter> network;
+
+  PNCounter a_counter("A");
+  PNCounter b_counter("B");
+  PNCounter c_counter("C");
+
+  const size_t a = network.add(&a_counter);  // a=0
+  const size_t b = network.add(&b_counter);  // b=0
+  const size_t c = network.add(&c_counter);  // c=0
+  (void)c;
+  network.dump();
+  assert(a_counter.query() == 0);
+  assert(b_counter.query() == 0);
+  assert(c_counter.query() == 0);
+
+  a_counter.increment(-1);
+  b_counter.increment(2);
+  c_counter.increment(3);
+  network.dump();
+  assert(a_counter.query() == -1);
+  assert(b_counter.query() == 2);
+  assert(c_counter.query() == 3);
+  assert(network.countPartitions() == 3);
+
+  network.broadcast(a);
+  network.dump();
+  assert(network.countPartitions() == 3);
+
+  network.broadcastAll();
+  network.dump();
+  assert(network.countPartitions() == 1);
+
+  network.disconnect(b);
+  a_counter.increment(10);
+  network.dump();
+
+  network.broadcastAll();
+  network.dump();
+  assert(a_counter.query() == 14);
+  assert(b_counter.query() == 4);
+  assert(c_counter.query() == 14);
+  assert(network.countPartitions() == 2);
+
+  b_counter.increment(-3);
+  network.dump();
+  assert(network.countPartitions() == 2);
+
+  network.reconnect(b);
+  network.broadcastAll();
+  network.dump();
+  assert(network.countPartitions() == 1);
+  assert(a_counter.query() == 11);
+
+  b_counter.increment(-12);
+  network.broadcast(b);
+  network.dump();
+  assert(network.countPartitions() == 1);
+  assert(a_counter.query() == -1);
+}
+
 int main(int argc, char *argv[]) {
-  // simulteGCountersInP2PNetwork();
-  simulteGCountersInStarNetwork();
+  // simulateGCountersInP2PNetwork();
+  // simulateGCountersInStarNetwork();
+  simulatePNCountersInP2PNetwork();
   return 0;
 }

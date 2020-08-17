@@ -9,7 +9,11 @@ set(CMAKE_CXX_STANDARD 17)
 
 include(prelude.cmake)
 
-add_executable(crdt crdt.cpp)
+add_executable(main
+  crdt.h
+  lib.h
+  main.cpp
+)
 
 # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-gnu-statement-expression")
 

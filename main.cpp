@@ -48,7 +48,7 @@ class P2PNetwork {
       if (j != i) {
         auto *other = _replicas[j];
         if (other) {
-          other->merge(*replica);
+          other->merge(replica->payload());
         }
       }
     }
@@ -170,11 +170,11 @@ class StarNetwork {
     // asynchrnously (i.e. after replying) for low-latency. Due to merge's
     // commutativity, both replicas (client and server) will reach the same CRDT
     // state.
-    auto replica_copy_to_send_to_server = *replica;
-    auto response_from_server = *server;
+    auto local_payload = replica->payload();
+    auto payload_from_server = server->payload();
     // Perform merges in two directions
-    replica->merge(response_from_server);
-    server->merge(replica_copy_to_send_to_server);
+    replica->merge(payload_from_server);
+    server->merge(local_payload);
     assert(replica->query() == server->query());
   }
 

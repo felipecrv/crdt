@@ -1,7 +1,9 @@
 // Copyright (C) 2020 Felipe O. Carvalho
 #pragma once
 
+#include <cstdint>
 #include <cstdio>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -88,10 +90,11 @@ class GCounter {
     _payload.increment(_name, delta);
   }
 
-  void merge(const GCounter &other) { _payload.merge(other._payload); }
+  void merge(const Payload &other) { _payload.merge(other); }
   // }}}
 
   const std::string &name() const { return _name; }
+  const Payload &payload() const { return _payload; }
   void dump() { printf("GCounter('%s', %d)\n", _name.c_str(), query()); }
 
  private:
@@ -103,32 +106,37 @@ class PNCounter {
  public:
   using ValueType = int;
 
+  struct Payload {
+    GCounter::Payload positive;
+    GCounter::Payload negative;
+  };
+
   // PNCounter definition {{{
   explicit PNCounter(std::string name) : _name(std::move(name)) {}
 
-  int query() const { return (int)_positive_payload.query() - (int)_negative_payload.query(); }
+  int query() const { return (int)_payload.positive.query() - (int)_payload.negative.query(); }
 
   void increment(int delta) {
     if (delta >= 0) {
       printf("Incrementing by %u at replica '%s'.\n", delta, _name.c_str());
-      _positive_payload.increment(_name, (unsigned int)delta);
+      _payload.positive.increment(_name, (unsigned int)delta);
     } else {
       printf("Decrementing by %u at replica '%s'.\n", -delta, _name.c_str());
-      _negative_payload.increment(_name, (unsigned int)-delta);
+      _payload.negative.increment(_name, (unsigned int)-delta);
     }
   }
 
-  void merge(const PNCounter &other) {
-    _positive_payload.merge(other._positive_payload);
-    _negative_payload.merge(other._negative_payload);
+  void merge(const Payload &other) {
+    _payload.positive.merge(other.positive);
+    _payload.negative.merge(other.negative);
   }
   // }}}
 
   const std::string &name() const { return _name; }
+  const Payload &payload() const { return _payload; }
   void dump() { printf("PNCounter('%s', %d)\n", _name.c_str(), query()); }
 
  private:
   const std::string _name;
-  GCounter::Payload _positive_payload;
-  GCounter::Payload _negative_payload;
+  Payload _payload;
 };

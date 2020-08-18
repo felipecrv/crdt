@@ -140,3 +140,103 @@ class PNCounter {
   const std::string _name;
   Payload _payload;
 };
+
+template <typename T>
+struct ValuePrinter {
+  void print(const T &) { assert(false && "ValuePrinter not implemented"); }
+};
+
+template <>
+struct ValuePrinter<std::string> {
+  void print(const std::string &value) { printf("'%s'", value.c_str()); }
+};
+
+template <typename T>
+struct ValuePrinter<std::optional<T>> {
+  void print(const std::optional<T> &value) {
+    if (value.has_value()) {
+      ValuePrinter<T> printer;
+      printf("Some(");
+      printer.print(*value);
+      putchar(')');
+    } else {
+      printf("None");
+    }
+  }
+};
+
+template <typename T>
+class LWWRegister {
+ public:
+  using ValueType = std::optional<T>;
+
+  class Payload {
+   public:
+    Payload() : _value{}, _timestamp(0, 0), _empty(true) {}
+
+    void assign(const T *value, uint64_t now, const std::string &replica_name) {
+      if (value) {
+        _value = *value;
+      }
+      _timestamp = std::make_pair(now, hashedReplicaName(replica_name));
+      _empty = !value;
+    }
+
+    const T *query() const { return _empty ? nullptr : &_value; }
+
+    bool operator<=(const Payload &other) const { return _timestamp <= other._timestamp; }
+
+    void merge(const Payload &other) {
+      if (*this <= other) {
+        *this = other;
+      }
+    }
+
+   private:
+    static size_t hashedReplicaName(const std::string &name) {
+      // In the real and distributed world this would be a well-defined and
+      // stable hash function like SipHash-2-4, BLAKE, SHA1 etc.
+      return std::hash<std::string>{}(name);
+    }
+
+    T _value;
+    std::pair<uint64_t, size_t> _timestamp;
+    bool _empty;
+  };
+
+  // LWWRegister definition {{{
+  explicit LWWRegister(std::string name) : _name(std::move(name)) {}
+
+  void assign(const T &value) {
+    _now += 1;
+    _payload.assign(&value, _now, _name);
+  }
+
+  void clear() {
+    _now += 1;
+    _payload.assign(nullptr, _now, _name);
+  }
+
+  const ValueType query() const {
+    const auto *value = _payload.query();
+    return value ? std::optional(*value) : std::nullopt;
+  }
+
+  void merge(const Payload &other) { _payload.merge(other); }
+  // }}}
+
+  const std::string &name() const { return _name; }
+  const Payload &payload() const { return _payload; }
+
+  void dump() {
+    printf("LWWRegister('%s', ", _name.c_str());
+    ValuePrinter<ValueType> printer;
+    printer.print(query());
+    puts(")");
+  }
+
+ private:
+  const std::string _name;
+  uint64_t _now = 0;
+  Payload _payload;
+};

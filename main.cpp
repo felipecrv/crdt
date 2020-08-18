@@ -414,9 +414,48 @@ void simulatePNCountersInP2PNetwork() {
   assert(a_counter.query() == -1);
 }
 
+void simulateLWWRegisters() {
+  P2PNetwork<LWWRegister<std::string>> network;
+
+  LWWRegister<std::string> a_register("A");
+  LWWRegister<std::string> b_register("B");
+  LWWRegister<std::string> c_register("C");
+
+  const size_t a = network.add(&a_register);  // a=0
+  const size_t b = network.add(&b_register);  // b=0
+  const size_t c = network.add(&c_register);  // c=0
+  (void)a;
+  (void)b;
+  (void)c;
+  network.dump();
+  assert(!a_register.query());
+  assert(!b_register.query());
+  assert(!c_register.query());
+
+  a_register.assign("_Felipe");
+  b_register.assign("felipec");
+  c_register.assign("felipe_oc");
+
+  network.dump();
+  assert(a_register.query() == "_Felipe");
+  assert(b_register.query() == "felipec");
+  assert(c_register.query() == "felipe_oc");
+
+  network.broadcastAll();
+  network.dump();
+  assert(network.countPartitions() == 1);
+
+  c_register.assign("@_Felipe");
+  network.broadcast(c);
+  network.dump();
+  assert(network.countPartitions() == 1);
+  assert(a_register.query() == "@_Felipe");
+}
+
 int main(int argc, char *argv[]) {
   // simulateGCountersInP2PNetwork();
   // simulateGCountersInStarNetwork();
-  simulatePNCountersInP2PNetwork();
+  // simulatePNCountersInP2PNetwork();
+  simulateLWWRegisters();
   return 0;
 }

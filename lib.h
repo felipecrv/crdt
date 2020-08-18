@@ -65,4 +65,30 @@ struct hash<vector<string>> {
   }
 };
 
+template <typename T>
+struct hash<unordered_set<T>> {
+  size_t operator()(const unordered_set<T> &v) const {
+    hash<T> elem_hasher;
+    size_t h = 0;
+    for (const auto &elem : v) {
+      h ^= elem_hasher(elem);
+    }
+    return h;
+  }
+};
+
+template <typename K, typename V>
+struct hash<unordered_map<K, V>> {
+  size_t operator()(const unordered_map<K, V> &v) const {
+    size_t ret = 0;
+    for (const auto & [ key, value ] : v) {
+      size_t h = 0;
+      hash_combine(h, key);
+      hash_combine(h, value);
+      ret ^= h;
+    }
+    return ret;
+  }
+};
+
 }  // namespace std

@@ -12,6 +12,8 @@
 #include "lib.h"
 
 struct VersionVec {
+  using Repr = std::unordered_map<std::string, uint64_t>;
+
   uint64_t max() const {
     uint64_t sum = 0;
     for (auto & [ _, v ] : data) {
@@ -50,6 +52,16 @@ struct VersionVec {
 
   bool operator==(const VersionVec &other) const { return data == other.data; }
 
+  uint64_t mergeVersionForReplica(const std::string &replica_name, uint64_t other_version) {
+    if (other_version == 0) {
+      auto *version = lookup(data, replica_name);
+      return version ? *version : 0;
+    }
+    auto &max_version = data[replica_name];
+    max_version = std::max(max_version, other_version);
+    return max_version;
+  }
+
   void merge(const VersionVec &other) {
     std::vector<const std::string *> replica_names;
     for (auto & [ replica_name, _ ] : data) {
@@ -60,12 +72,15 @@ struct VersionVec {
     }
 
     for (auto *replica_name : replica_names) {
-      auto &val = data[*replica_name];
-      val = std::max(val, other.localVersionForReplica(*replica_name));
+      mergeVersionForReplica(*replica_name, other.localVersionForReplica(*replica_name));
     }
   }
 
-  std::unordered_map<std::string, uint64_t> data;
+  Repr::const_iterator begin() const { return data.begin(); }
+  Repr::const_iterator end() const { return data.end(); }
+
+ private:
+  Repr data;
 };
 
 namespace std {
@@ -74,7 +89,7 @@ template <>
 struct hash<VersionVec> {
   size_t operator()(const VersionVec &v) const {
     size_t ret = 0;
-    for (const auto & [ key, value ] : v.data) {
+    for (const auto & [ key, value ] : v) {
       if (value != 0) {
         size_t h = 0;
         hash_combine(h, key);

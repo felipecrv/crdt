@@ -11,82 +11,95 @@
 #include <vector>
 #include "lib.h"
 
+struct VersionVec {
+  uint64_t max() const {
+    uint64_t sum = 0;
+    for (auto & [ _, v ] : data) {
+      sum += v;
+    }
+    return sum;
+  }
+
+  void increment(const std::string &replica_name, uint64_t delta) { data[replica_name] += delta; }
+
+  uint64_t localVersionForReplica(const std::string &replica_name) const {
+    if (auto *value = lookup(data, replica_name)) {
+      return *value;
+    }
+    return 0;
+  }
+
+  bool operator<=(const VersionVec &other) const {
+    std::vector<const std::string *> replica_names;
+    for (auto & [ replica_name, _ ] : data) {
+      replica_names.push_back(&replica_name);
+    }
+    for (auto & [ replica_name, _ ] : other.data) {
+      replica_names.push_back(&replica_name);
+    }
+
+    for (auto *replica_name : replica_names) {
+      const bool leq =
+          localVersionForReplica(*replica_name) <= other.localVersionForReplica(*replica_name);
+      if (!leq) {
+        return false;
+      }
+    }
+    return false;
+  }
+
+  bool operator==(const VersionVec &other) const { return data == other.data; }
+
+  void merge(const VersionVec &other) {
+    std::vector<const std::string *> replica_names;
+    for (auto & [ replica_name, _ ] : data) {
+      replica_names.push_back(&replica_name);
+    }
+    for (auto & [ replica_name, _ ] : other.data) {
+      replica_names.push_back(&replica_name);
+    }
+
+    for (auto *replica_name : replica_names) {
+      auto &val = data[*replica_name];
+      val = std::max(val, other.localVersionForReplica(*replica_name));
+    }
+  }
+
+  std::unordered_map<std::string, uint64_t> data;
+};
+
+namespace std {
+
+template <>
+struct hash<VersionVec> {
+  size_t operator()(const VersionVec &v) const {
+    size_t ret = 0;
+    for (const auto & [ key, value ] : v.data) {
+      if (value != 0) {
+        size_t h = 0;
+        hash_combine(h, key);
+        hash_combine(h, value);
+        ret ^= h;
+      }
+    }
+    return ret;
+  }
+};
+
+}  // namespace std
+
 class GCounter {
  public:
-  using ValueType = int;
-
-  class Payload {
-   public:
-    unsigned int localValueForReplica(const std::string &replica_name) const {
-      if (auto *value = lookup(_payload, replica_name)) {
-        return *value;
-      }
-      return 0;
-    }
-
-    unsigned int query() const {
-      unsigned int sum = 0;
-      for (auto & [ _, v ] : _payload) {
-        sum += v;
-      }
-      return sum;
-    }
-
-    bool operator<=(const Payload &other) const {
-      std::vector<const std::string *> replica_names;
-      for (auto & [ replica_name, _ ] : _payload) {
-        replica_names.push_back(&replica_name);
-      }
-      for (auto & [ replica_name, _ ] : other._payload) {
-        replica_names.push_back(&replica_name);
-      }
-
-      for (auto *replica_name : replica_names) {
-        const bool leq =
-            localValueForReplica(*replica_name) <= other.localValueForReplica(*replica_name);
-        if (!leq) {
-          return false;
-        }
-      }
-      return false;
-    }
-
-    void increment(const std::string &replica_name, unsigned int delta) {
-      _payload[replica_name] += delta;
-    }
-
-    void merge(const Payload &other) {
-      std::vector<const std::string *> replica_names;
-      for (auto & [ replica_name, _ ] : _payload) {
-        replica_names.push_back(&replica_name);
-      }
-      for (auto & [ replica_name, _ ] : other._payload) {
-        replica_names.push_back(&replica_name);
-      }
-
-      for (auto *replica_name : replica_names) {
-        auto &val = _payload[*replica_name];
-        val = std::max(val, other.localValueForReplica(*replica_name));
-      }
-    }
-
-    void dump() const {
-      for (auto & [ replica_name, replica ] : _payload) {
-        printf("%s=%d\n", replica_name.c_str(), localValueForReplica(replica_name));
-      }
-    }
-
-   private:
-    std::unordered_map<std::string, unsigned int> _payload;
-  };
+  using ValueType = uint64_t;
+  using Payload = VersionVec;
 
   // GCounter definition {{{
   explicit GCounter(std::string name) : _name(std::move(name)) {}
 
-  unsigned int query() const { return _payload.query(); }
+  unsigned int query() const { return _payload.max(); }
 
-  void increment(unsigned int delta = 1) {
-    printf("Incrementing by %u at replica '%s'.\n", delta, _name.c_str());
+  void increment(uint64_t delta = 1) {
+    printf("Incrementing by %llu at replica '%s'.\n", delta, _name.c_str());
     _payload.increment(_name, delta);
   }
 
@@ -104,25 +117,27 @@ class GCounter {
 
 class PNCounter {
  public:
-  using ValueType = int;
+  using ValueType = int64_t;
 
   struct Payload {
-    GCounter::Payload positive;
-    GCounter::Payload negative;
+    VersionVec positive;
+    VersionVec negative;
   };
 
   // PNCounter definition {{{
   explicit PNCounter(std::string name) : _name(std::move(name)) {}
 
-  int query() const { return (int)_payload.positive.query() - (int)_payload.negative.query(); }
+  int64_t query() const {
+    return (int64_t)_payload.positive.max() - (int64_t)_payload.negative.max();
+  }
 
-  void increment(int delta) {
+  void increment(int64_t delta) {
     if (delta >= 0) {
-      printf("Incrementing by %u at replica '%s'.\n", delta, _name.c_str());
-      _payload.positive.increment(_name, (unsigned int)delta);
+      printf("Incrementing by %lld at replica '%s'.\n", delta, _name.c_str());
+      _payload.positive.increment(_name, (uint64_t)delta);
     } else {
-      printf("Decrementing by %u at replica '%s'.\n", -delta, _name.c_str());
-      _payload.negative.increment(_name, (unsigned int)-delta);
+      printf("Decrementing by %lld at replica '%s'.\n", -delta, _name.c_str());
+      _payload.negative.increment(_name, (uint64_t)-delta);
     }
   }
 
@@ -134,7 +149,7 @@ class PNCounter {
 
   const std::string &name() const { return _name; }
   const Payload &payload() const { return _payload; }
-  void dump() { printf("PNCounter('%s', %d)\n", _name.c_str(), query()); }
+  void dump() { printf("PNCounter('%s', %lld)\n", _name.c_str(), query()); }
 
  private:
   const std::string _name;

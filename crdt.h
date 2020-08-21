@@ -47,7 +47,7 @@ struct VersionVec {
         return false;
       }
     }
-    return false;
+    return true;
   }
 
   bool operator==(const VersionVec &other) const { return data == other.data; }

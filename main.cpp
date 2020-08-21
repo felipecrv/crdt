@@ -414,7 +414,7 @@ void simulatePNCountersInP2PNetwork() {
   assert(a_counter.query() == -1);
 }
 
-void simulateLWWRegisters() {
+void simulateLWWRegistersInP2PNetwork() {
   P2PNetwork<LWWRegister<std::string>> network;
 
   LWWRegister<std::string> a_register("A");
@@ -452,7 +452,7 @@ void simulateLWWRegisters() {
   assert(a_register.query() == "@_Felipe");
 }
 
-void simulateMVRegisters() {
+void simulateMVRegistersInP2PNetwork() {
   P2PNetwork<MVRegister<std::string>> network;
 
   MVRegister<std::string> a_register("A");
@@ -522,7 +522,8 @@ int main(int argc, char *argv[]) {
   // simulateGCountersInP2PNetwork();
   // simulateGCountersInStarNetwork();
   // simulatePNCountersInP2PNetwork();
-  // simulateLWWRegisters();
-  simulateMVRegisters();
+  // simulateLWWRegistersInP2PNetwork();
+  // simulateMVRegistersInP2PNetwork();
+  simulateMVRegistersInP2PNetwork();
   return 0;
 }

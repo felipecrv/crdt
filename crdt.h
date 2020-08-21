@@ -31,6 +31,13 @@ struct VersionVec {
     return 0;
   }
 
+  // Two version vectors v, w can be:
+  //
+  // (1) v < w : For all i, v[i] <= w[i] and there is at least one i such that v[i] < w[i];
+  // (2) v > w : For all i, v[i] >= w[i] and there is at least one i such that v[i] > w[i];
+  // (3) v = w : For all i, v[i] = w[i]; and
+  // (4) v || w : otherwise -- concurrent version vectors -- not(v < w) and not(v >= w).
+
   bool operator<=(const VersionVec &other) const {
     std::vector<const std::string *> replica_names;
     for (auto & [ replica_name, _ ] : data) {
@@ -49,6 +56,42 @@ struct VersionVec {
     }
     return true;
   }
+
+  // When v < w, we say that v is dominated by w. [Marc Shapiro et al 2011]
+  // expresses the converse -- v is not dominated by w -- as (v || w) or (v >= w).
+  //
+  // My proof of equivalence:
+  //
+  // not(v < w) <=> (v || w) or (v >= w)
+  //  <=> (not(v < w) and not(v >= w)) or (v >= w)                (4)
+  //  <=> (not(v < w) or (v >= w)) and (not(v >= w)) or (v >= w)) (Distribut.)
+  //  <=> (not(v < w) or (v >= w)) and true                       (Complement)
+  //  <=> not(v < w) or (v >= w)                                  (Identity)
+  //  <=> not(v < w)                                              (v >= w implies not(v < w)
+  //                                                               so it can be dropped).
+  bool operator<(const VersionVec &other) const {
+    std::vector<const std::string *> replica_names;
+    for (auto & [ replica_name, _ ] : data) {
+      replica_names.push_back(&replica_name);
+    }
+    for (auto & [ replica_name, _ ] : other.data) {
+      replica_names.push_back(&replica_name);
+    }
+
+    bool at_least_one_strict_lt = false;
+    for (auto *replica_name : replica_names) {
+      const auto v = localVersionForReplica(*replica_name);
+      const auto w = other.localVersionForReplica(*replica_name);
+      if (v < w) {
+        at_least_one_strict_lt = true;
+      } else if (v > w) {
+        return false;
+      }
+    }
+    return at_least_one_strict_lt;
+  }
+
+  bool dominatedBy(const VersionVec &other) const { return *this < other; }
 
   bool operator==(const VersionVec &other) const { return data == other.data; }
 

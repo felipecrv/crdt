@@ -452,10 +452,77 @@ void simulateLWWRegisters() {
   assert(a_register.query() == "@_Felipe");
 }
 
+void simulateMVRegisters() {
+  P2PNetwork<MVRegister<std::string>> network;
+
+  MVRegister<std::string> a_register("A");
+  MVRegister<std::string> b_register("B");
+  MVRegister<std::string> c_register("C");
+
+  const size_t a = network.add(&a_register);  // a=0
+  const size_t b = network.add(&b_register);  // b=0
+  const size_t c = network.add(&c_register);  // c=0
+  (void)c;
+  network.dump();
+  assert(a_register.query().empty());
+  assert(b_register.query().empty());
+  assert(c_register.query().empty());
+
+  a_register.assign({"Toilet Paper", "Pasta"});
+  b_register.assign({"Pasta"});
+  c_register.assign({"Pop Corn", "Pasta"});
+  network.dump();
+
+  network.broadcastAll();
+  network.dump();
+  assert(network.countPartitions() == 1);
+
+  a_register.assign({"Pasta"});
+  b_register.assign({});
+  network.dump();
+  assert(network.countPartitions() == 3);
+  network.broadcastAll();
+  network.dump();
+  assert(network.countPartitions() == 1);
+  // All items re-appear because C still has all three shopping cart items. This
+  // anomaly is noted in the Dynamo paper [Giuseppe DeCandia et al. 2007].
+  //
+  //     [Section 4.4]
+  //     > Using this reconciliation mechanism, an “add to cart” operation is
+  //     > never lost. However, deleted items can resurface.
+  //
+  // The problem is that, MV-Register does not behave like a set, contrary to
+  // what one might expect since its payload is a set.  For set semantics, a set
+  // CRDT must be used.
+  assert(c_register.query().size() == 3);
+
+  a_register.clear();
+  b_register.clear();
+  c_register.clear();
+  network.dump();
+
+  a_register.assign({"Pasta"});
+  network.dump();
+  network.broadcast(a);
+  network.dump();
+  assert(network.countPartitions() == 1);
+
+  b_register.assign({"Toilet Paper"});
+  network.dump();
+  network.broadcast(b);
+  network.dump();
+  network.broadcast(a); // If A doesn't broadcast again, B keeps believing on its local value.
+  network.dump();
+  assert(network.countPartitions() == 1);
+  assert(a_register.query().size() == 2);
+  assert(b_register.query().size() == 2);
+}
+
 int main(int argc, char *argv[]) {
   // simulateGCountersInP2PNetwork();
   // simulateGCountersInStarNetwork();
   // simulatePNCountersInP2PNetwork();
-  simulateLWWRegisters();
+  // simulateLWWRegisters();
+  simulateMVRegisters();
   return 0;
 }

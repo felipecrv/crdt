@@ -239,6 +239,24 @@ struct ValuePrinter<std::optional<T>> {
 };
 
 template <typename T>
+struct ValuePrinter<std::unordered_set<T>> {
+  void print(const std::unordered_set<T> &value) {
+    ValuePrinter<T> printer;
+    putchar('{');
+    bool first = true;
+    for (auto &elem : value) {
+      if (!first) {
+        printf(", ");
+      } else {
+        first = false;
+      }
+      printer.print(elem);
+    }
+    putchar('}');
+  }
+};
+
+template <typename T>
 class LWWRegister {
  public:
   using ValueType = std::optional<T>;
@@ -311,5 +329,138 @@ class LWWRegister {
  private:
   const std::string _name;
   uint64_t _now = 0;
+  Payload _payload;
+};
+
+template <typename T>
+struct MVRegisterSetNode {
+  MVRegisterSetNode() : _empty(true) {}
+
+  MVRegisterSetNode(VersionVec version_vec)
+      : _empty(true), _version_vector(std::move(version_vec)) {}
+
+  MVRegisterSetNode(const T &value, VersionVec version_vec)
+      : _value(value), _empty(false), _version_vector(std::move(version_vec)) {}
+
+  bool operator==(const MVRegisterSetNode &other) const {
+    if (_empty != other._empty) {
+      return false;
+    }
+    if (_empty) {
+      return _version_vector == other._version_vector;
+    }
+    return _value == other._value && _version_vector == other._version_vector;
+  }
+
+  const T *value() const { return _empty ? nullptr : &_value; }
+  const VersionVec &versionVector() const { return _version_vector; }
+
+ private:
+  T _value;
+  bool _empty = true;
+  VersionVec _version_vector;
+};
+
+namespace std {
+
+template <typename T>
+struct hash<MVRegisterSetNode<T>> {
+  size_t operator()(const MVRegisterSetNode<T> &key) const {
+    size_t h = 0;
+    auto *value = key.value();
+    hash_combine(h, !!value);
+    if (value) {
+      hash_combine(h, *value);
+    }
+    hash_combine(h, key.versionVector());
+    return h;
+  }
+};
+
+}  // namespace std
+
+// MV-Register does not behave like a set, contrary to what one might expect
+// since its payload is a set.
+template <typename T>
+class MVRegister {
+ public:
+  using ValueType = std::unordered_set<T>;
+
+  class Payload {
+   public:
+    void assign(ValueType value, const std::string &replica_name) {
+      _set.clear();
+      const auto version_vec = bumpVersionVector(replica_name);
+      if (value.empty()) {
+        _set.emplace(version_vec);
+      } else {
+        for (const auto &i : value) {
+          _set.emplace(i, version_vec);
+        }
+      }
+    }
+
+    ValueType query() const {
+      ValueType ret;
+      for (auto &node : _set) {
+        auto *value = node.value();
+        if (value) {
+          ret.insert(*value);
+        }
+      }
+      return ret;
+    }
+
+    void merge(const Payload &other) {
+      std::unordered_set<MVRegisterSetNode<T>> merged;
+      for (const MVRegisterSetNode<T> &i : _set) {
+        for (const MVRegisterSetNode<T> &j : other._set) {
+          if (!i.versionVector().dominatedBy(j.versionVector())) {
+            merged.insert(i);
+          }
+          if (!j.versionVector().dominatedBy(i.versionVector())) {
+            merged.insert(j);
+          }
+        }
+      }
+      _set = merged;
+    }
+
+   private:
+    VersionVec bumpVersionVector(const std::string &replica_name) {
+      VersionVec inc_version_vec;
+      for (auto &i : _set) {
+        inc_version_vec.merge(i.versionVector());
+      }
+      inc_version_vec.increment(replica_name, 1);
+      return inc_version_vec;
+    }
+
+    std::unordered_set<MVRegisterSetNode<T>> _set;
+  };
+
+  // MVRegister definition {{{
+  explicit MVRegister(std::string name) : _name(std::move(name)) {}
+
+  void assign(ValueType value) { _payload.assign(std::move(value), _name); }
+
+  const ValueType query() const { return _payload.query(); }
+
+  void merge(const Payload &other) { _payload.merge(other); }
+  // }}}
+
+  void clear() { assign({}); }
+  const std::string &name() const { return _name; }
+  const Payload &payload() const { return _payload; }
+
+  void dump() {
+    printf("MVRegister('%s', ", _name.c_str());
+    ValuePrinter<ValueType> printer;
+    printer.print(query());
+    puts(")");
+  }
+
+ private:
+  std::string _name;
   Payload _payload;
 };

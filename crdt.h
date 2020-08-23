@@ -222,48 +222,6 @@ class PNCounter {
 
 // }}}
 
-template <typename T>
-struct ValuePrinter {
-  void print(const T &) { assert(false && "ValuePrinter not implemented"); }
-};
-
-template <>
-struct ValuePrinter<std::string> {
-  void print(const std::string &value) { printf("'%s'", value.c_str()); }
-};
-
-template <typename T>
-struct ValuePrinter<std::optional<T>> {
-  void print(const std::optional<T> &value) {
-    if (value.has_value()) {
-      ValuePrinter<T> printer;
-      printf("Some(");
-      printer.print(*value);
-      putchar(')');
-    } else {
-      printf("None");
-    }
-  }
-};
-
-template <typename T>
-struct ValuePrinter<std::unordered_set<T>> {
-  void print(const std::unordered_set<T> &value) {
-    ValuePrinter<T> printer;
-    putchar('{');
-    bool first = true;
-    for (auto &elem : value) {
-      if (!first) {
-        printf(", ");
-      } else {
-        first = false;
-      }
-      printer.print(elem);
-    }
-    putchar('}');
-  }
-};
-
 // Registers {{{
 
 template <typename T>

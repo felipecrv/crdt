@@ -11,6 +11,8 @@
 #include <vector>
 #include "lib.h"
 
+// Primitives {{{
+
 struct VersionVec {
   using Repr = std::unordered_map<std::string, uint64_t>;
 
@@ -146,6 +148,10 @@ struct hash<VersionVec> {
 
 }  // namespace std
 
+// }}}
+
+// Counters {{{
+
 class GCounter {
  public:
   using ValueType = uint64_t;
@@ -214,6 +220,8 @@ class PNCounter {
   Payload _payload;
 };
 
+// }}}
+
 template <typename T>
 struct ValuePrinter {
   void print(const T &) { assert(false && "ValuePrinter not implemented"); }
@@ -255,6 +263,8 @@ struct ValuePrinter<std::unordered_set<T>> {
     putchar('}');
   }
 };
+
+// Registers {{{
 
 template <typename T>
 class LWWRegister {
@@ -464,3 +474,5 @@ class MVRegister {
   std::string _name;
   Payload _payload;
 };
+
+// }}}

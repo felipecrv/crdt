@@ -434,3 +434,92 @@ class MVRegister {
 };
 
 // }}}
+
+// Sets {{{
+
+// NOTE(philix): Grow-Only Sets (GSets) are really simple so I didn't bother
+// implementind them.
+
+template <typename T>
+class _2PSet {
+ public:
+  using ValueType = std::unordered_set<T>;
+
+  class Payload {
+   public:
+    ValueType query() const {
+      ValueType ret;
+      for (const auto &value : _add) {
+        if (!::contains(_rem, value)) {
+          ret.insert(value);
+        }
+      }
+      return ret;
+    }
+
+    bool contains(const T &value) const {
+      return ::contains(_add, value) && !::contains(_rem, value);
+    }
+
+    void add(const T &value) { _add.insert(value); }
+
+    [[nodiscard]] bool remove(const T &value) {
+      if (::contains(_add, value)) {
+        _rem.insert(value);
+        return true;
+      }
+      return false;
+    }
+
+    void merge(const Payload &other) {
+      _add.insert(other._add.begin(), other._add.end());
+      _rem.insert(other._rem.begin(), other._rem.end());
+    }
+
+   private:
+    std::unordered_set<T> _add;
+    std::unordered_set<T> _rem;
+  };
+
+  // 2PSet Definition {{{
+  explicit _2PSet(std::string name) : _name(std::move(name)) {}
+  bool contains(const T &value) const { return _payload.contains(value); }
+  void add(const T &value) { _payload.add(value); }
+  [[nodiscard]] bool remove(const T &value) { return _payload.remove(value); }
+  void merge(const Payload &other) { _payload.merge(other); }
+  // }}}
+
+  void addMany() {}
+
+  template <typename... Args>
+  void addMany(const T &value, Args... args) {
+    add(value);
+    addMany(args...);
+  }
+
+  bool removeMany() { return true; }
+
+  template <typename... Args>
+  [[nodiscard]] bool removeMany(const T &value, Args... args) {
+    const bool removed = remove(value);
+    return removeMany(args...) && removed;
+  }
+
+  ValueType query() const { return _payload.query(); }
+
+  const std::string &name() const { return _name; }
+  const Payload &payload() const { return _payload; }
+
+  void dump() {
+    printf("2PSet('%s', ", _name.c_str());
+    ValuePrinter<ValueType> printer;
+    printer.print(query());
+    puts(")");
+  }
+
+ private:
+  std::string _name;
+  Payload _payload;
+};
+
+// }}}

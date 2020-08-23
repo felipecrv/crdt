@@ -9,6 +9,12 @@
 #include "crdt.h"
 #include "lib.h"
 
+#define REQUIRE(x)     \
+  {                    \
+    const bool _b = x; \
+    assert(_b);        \
+  }
+
 template <typename CRDT>
 class P2PNetwork {
  public:
@@ -511,11 +517,59 @@ void simulateMVRegistersInP2PNetwork() {
   network.dump();
   network.broadcast(b);
   network.dump();
-  network.broadcast(a); // If A doesn't broadcast again, B keeps believing on its local value.
+  network.broadcast(a);  // If A doesn't broadcast again, B keeps believing on its local value.
   network.dump();
   assert(network.countPartitions() == 1);
   assert(a_register.query().size() == 2);
   assert(b_register.query().size() == 2);
+}
+
+void simulate2PSetsInP2PNetwork() {
+  P2PNetwork<_2PSet<std::string>> network;
+
+  _2PSet<std::string> a_set("A");
+  _2PSet<std::string> b_set("B");
+  _2PSet<std::string> c_set("C");
+
+  const size_t a = network.add(&a_set);
+  const size_t b = network.add(&b_set);
+  const size_t c = network.add(&c_set);
+  (void)a;
+  (void)b;
+  (void)c;
+  network.dump();
+  assert(a_set.query().empty());
+  assert(b_set.query().empty());
+  assert(c_set.query().empty());
+
+  a_set.addMany("Toilet Paper", "Pasta");
+  b_set.addMany("Pasta");
+  c_set.addMany("Pop Corn", "Pasta");
+  network.dump();
+
+  network.broadcastAll();
+  network.dump();
+  assert(network.countPartitions() == 1);
+
+  REQUIRE(a_set.removeMany("Toilet Paper", "Pop Corn", "Pasta"));
+  // REQUIRE(b_set.removeMany("Toilet Paper", "Pop Corn", "Pasta"));
+  network.dump();
+  assert(network.countPartitions() == 2);
+  network.broadcastAll();
+  network.dump();
+  assert(network.countPartitions() == 1);
+  // Unlike in the case of MVRegisters, P2Sets, after all updates are broadcast,
+  // don't let removed items re-appear.
+  assert(c_set.query().empty());
+
+  a_set.add("Pasta");
+  network.dump();
+  network.broadcast(a);
+  assert(network.countPartitions() == 1);
+  // Items that were removed, can't be added again. In a practical
+  // implementations items would need to be associated with a logical timestamp
+  // and the replica identifier (a way to make adds globally unique).
+  assert(c_set.query().empty());
 }
 
 int main(int argc, char *argv[]) {
@@ -524,6 +578,7 @@ int main(int argc, char *argv[]) {
   // simulatePNCountersInP2PNetwork();
   // simulateLWWRegistersInP2PNetwork();
   // simulateMVRegistersInP2PNetwork();
-  simulateMVRegistersInP2PNetwork();
+  // simulateMVRegistersInP2PNetwork();
+  simulate2PSetsInP2PNetwork();
   return 0;
 }
